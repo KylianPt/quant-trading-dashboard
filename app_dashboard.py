@@ -115,7 +115,7 @@ def live_prices_tab():
         )
 
     df_summary = pd.DataFrame(rows).sort_values("Name")
-    st.dataframe(df_summary, use_container_width=True)
+    st.dataframe(df_summary, width="stretch")
 
     now_utc = datetime.now(timezone.utc)
     st.caption(f"Last update (system time, UTC): {now_utc:%Y-%m-%d %H:%M:%S %Z}")
@@ -221,7 +221,7 @@ def single_asset_tab():
 
     # Option : afficher les dernières lignes du backtest
     with st.expander("Show last rows of backtest data"):
-        st.dataframe(result.tail(30), use_container_width=True)
+        st.dataframe(result.tail(30), width="stretch")
 
 
 # ---------- Main app ----------
