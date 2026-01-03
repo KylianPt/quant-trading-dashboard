@@ -9,22 +9,51 @@ from metrics import summarize_strategy
 
 from streamlit_autorefresh import st_autorefresh
 
-# ===== Univers d'actifs (principalement CAC 40) =====
+
+# ===== Univers d'actifs (CAC 40) =====
 TICKERS = {
-    "^FCHI": "CAC 40",
-    "MC.PA": "LVMH",
-    "AIR.PA": "Airbus",
-    "OR.PA": "L'Oréal",
-    "SAN.PA": "Sanofi",
-    "BNP.PA": "BNP Paribas",
-    "GLE.PA": "Société Générale",
-    "ENGI.PA": "Engie",
-    "SU.PA": "Schneider Electric",
-    "DG.PA": "Vinci",
-    "RI.PA": "Pernod Ricard",
-    "KER.PA": "Kering",
+    "^FCHI": "CAC 40 (Index)",
+
+    "AC.PA": "Accor",
     "AI.PA": "Air Liquide",
+    "AIR.PA": "Airbus",
+    "MT.AS": "ArcelorMittal",  
+    "CS.PA": "AXA",
+    "BNP.PA": "BNP Paribas",
+    "EN.PA": "Bouygues",
+    "BVI.PA": "Bureau Veritas",
+    "CAP.PA": "Capgemini",
+    "CA.PA": "Carrefour",
+    "ACA.PA": "Crédit Agricole",
     "BN.PA": "Danone",
+    "DSY.PA": "Dassault Systèmes",
+    "EDEN.PA": "Edenred",
+    "ENGI.PA": "Engie",
+    "EL.PA": "EssilorLuxottica",
+    "ERF.PA": "Eurofins Scientific",
+    "RMS.PA": "Hermès",
+    "KER.PA": "Kering",
+    "LR.PA": "Legrand",
+    "OR.PA": "L'Oréal",
+    "MC.PA": "LVMH",
+    "ML.PA": "Michelin",
+    "ORA.PA": "Orange",
+    "RI.PA": "Pernod Ricard",
+    "PUB.PA": "Publicis Groupe",
+    "RNO.PA": "Renault",
+    "SAF.PA": "Safran",
+    "SGO.PA": "Saint-Gobain",
+    "SAN.PA": "Sanofi",
+    "SU.PA": "Schneider Electric",
+    "GLE.PA": "Société Générale",
+    "STLA.PA": "Stellantis",
+    "STM.PA": "STMicroelectronics",
+    "TEP.PA": "Teleperformance",
+    "HO.PA": "Thales",
+    "TTE.PA": "TotalEnergies",
+    "URW.AS": "Unibail-Rodamco-Westfield",  
+    "VIE.PA": "Veolia",
+    "DG.PA": "Vinci",
 }
 
 
@@ -47,7 +76,6 @@ def get_last_price(ticker: str) -> float | None:
 
 
 def live_prices_tab():
-    """Onglet 1 : vue temps réel multi-actifs (ce que tu avais déjà)."""
     st.subheader("Live market view")
 
     st.write(
@@ -56,10 +84,15 @@ def live_prices_tab():
     )
 
     ticker_choices = list(TICKERS.keys())
+
+    # Sélection par défaut (quelques actifs)
+    default_list = ["^FCHI", "AI.PA", "AIR.PA", "MC.PA", "SAN.PA", "TTE.PA", "SU.PA"]
+    default_list = [t for t in default_list if t in ticker_choices]
+
     selected_tickers = st.multiselect(
         "Choose assets to display:",
         options=ticker_choices,
-        default=ticker_choices,
+        default=default_list,
         format_func=lambda x: f"{TICKERS[x]} ({x})",
     )
 
@@ -67,29 +100,12 @@ def live_prices_tab():
         st.warning("Select at least one asset.")
         return
 
-    # --- cartes de valeurs actuelles ---
-    st.markdown("### Current values")
-
-    cols = st.columns(len(selected_tickers))
-    latest_prices: dict[str, float | None] = {}
-
-    for col, ticker in zip(cols, selected_tickers):
-        with col:
-            name = TICKERS[ticker]
-            price = get_last_price(ticker)
-            latest_prices[ticker] = price
-
-            if price is None:
-                st.metric(label=f"{name} ({ticker})", value="N/A")
-            else:
-                st.metric(label=f"{name} ({ticker})", value=f"{price:,.2f}")
-
-    # --- tableau récap ---
+    # --- tableau récap --- 
     st.markdown("### Summary table")
 
     rows = []
     for ticker in selected_tickers:
-        price = latest_prices.get(ticker)
+        price = get_last_price(ticker)
         rows.append(
             {
                 "Name": TICKERS[ticker],
@@ -98,9 +114,7 @@ def live_prices_tab():
             }
         )
 
-    df_summary = pd.DataFrame(rows)
-    df_summary = df_summary.sort_values("Name")
-
+    df_summary = pd.DataFrame(rows).sort_values("Name")
     st.dataframe(df_summary, use_container_width=True)
 
     now_utc = datetime.now(timezone.utc)
@@ -115,14 +129,14 @@ def single_asset_tab():
     st.subheader("Single asset backtest – Quant A")
 
     st.write(
-        "Analyse one main asset at a time (default: Air Liquide). "
-        "We implement simple buy-and-hold and momentum SMA strategies, "
-        "and display key performance metrics."
+        "Focus on one asset at a time. Two strategies are implemented: "
+        "Buy & Hold and Momentum (SMA filter)."
     )
 
     # Choix de l'actif
     ticker_options = list(TICKERS.keys())
     default_index = ticker_options.index(DEFAULT_TICKER) if DEFAULT_TICKER in ticker_options else 0
+
     ticker = st.selectbox(
         "Asset to backtest:",
         options=ticker_options,
@@ -141,7 +155,7 @@ def single_asset_tab():
     )
 
     # Paramètre pour la SMA si besoin
-    sma_window = None
+    sma_window = 50
     if strategy_name == "Momentum SMA":
         sma_window = st.slider("SMA window (days)", min_value=10, max_value=200, value=50, step=5)
 
@@ -154,13 +168,13 @@ def single_asset_tab():
         step=100.0,
     )
 
+    # --- Backtest ---
     run = st.button("Run backtest")
 
     if not run:
         st.info("Choose parameters then click **Run backtest**.")
         return
 
-    # --- Backtest ---
     with st.spinner("Running backtest..."):
         data = get_price_history(ticker=ticker, years=years)
 
@@ -190,7 +204,6 @@ def single_asset_tab():
         },
         index=result.index,
     )
-
     st.line_chart(chart_df)
 
     # --- métriques de performance ---
@@ -206,20 +219,15 @@ def single_asset_tab():
     col5.metric("Annualized volatility", f"{summary['annualized_volatility'] * 100:.1f}%")
     col6.metric("Sharpe ratio", f"{summary['sharpe_ratio']:.2f}")
 
-    st.caption(
-        "Daily data; metrics are annualized assuming 252 trading days per year. "
-        "Max drawdown is expressed as a negative percentage from peak to trough."
-    )
-
     # Option : afficher les dernières lignes du backtest
     with st.expander("Show last rows of backtest data"):
-        st.dataframe(result.tail(), use_container_width=True)
+        st.dataframe(result.tail(30), use_container_width=True)
 
 
 # ---------- Main app ----------
 
 def main():
-     # Auto-refresh toutes les 5 minutes (300 000 ms)
+    # Auto-refresh toutes les 5 minutes (300 000 ms)
     st_autorefresh(interval=5 * 60 * 1000, key="auto_refresh_5min")
 
     st.title("Live Market Dashboard – Prototype")
