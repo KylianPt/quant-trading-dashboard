@@ -1,7 +1,9 @@
 #!/bin/bash
 
-# Démarrer cron en arrière-plan
+# Start the cron service in the background
 service cron start
 
-# Démarrer l'application Streamlit
-streamlit run src/app_dashboard.py --server.port=8501 --server.address=0.0.0.0
+# Run the Streamlit app
+# --server.port=8080: Matches the internal_port in fly.toml
+# --server.address=0.0.0.0: Allows external connections (required for Docker/Fly)
+python3 -m streamlit run src/app_dashboard.py --server.port=8080 --server.address=0.0.0.0

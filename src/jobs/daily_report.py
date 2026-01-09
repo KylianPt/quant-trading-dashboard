@@ -1,87 +1,84 @@
-from __future__ import annotations
-
-from datetime import date
-from pathlib import Path
-
+import yfinance as yf
 import pandas as pd
+import numpy as np
+from datetime import datetime
+from data.database import log_market_report, get_active_tickers_db
 
-from data.data_single_asset import get_price_history
-from logic.strategies_single import backtest_buy_and_hold, backtest_momentum_sma
-from logic.metrics import summarize_strategy, annualized_volatility
+def generate_daily_report():
+    """
+    Fetches the latest daily session for all active tickers.
+    Extracts Open, High, Low, Close directly from Yahoo Finance.
+    Calculates intraday volatility and drawdown based on the daily range.
+    """
+    tickers = get_active_tickers_db()
+    if not tickers:
+        print("No active tickers found for report.")
+        return
 
-
-# Select assets for the report (CAC 40 index + subset)
-ASSET_TICKERS = [
-    "^FCHI",   # CAC 40 index
-    "AI.PA",   # Air Liquide
-    "MC.PA",   # LVMH
-    "SAN.PA",  # Sanofi
-    "TTE.PA",  # TotalEnergies
-    "SU.PA",   # Schneider
-]
-
-
-def build_report_row(ticker: str, years: int = 5) -> dict:
-    data = get_price_history(ticker=ticker, years=years)
-
-    last_idx = data.index[-1]
-    last_row = data.iloc[-1]
-
-    last_open = float(last_row["Open"])
-    last_close = float(last_row["Close"])
-    last_return = float(last_row["return"])
-
-    vol20 = annualized_volatility(data["return"].tail(20), periods_per_year=252)
-
-    # Buy & Hold
-    bh = backtest_buy_and_hold(data, initial_capital=1_000.0)
-    bh_summary = summarize_strategy(bh, initial_capital=1_000.0)
-
-    # Momentum SMA(50)
-    mom = backtest_momentum_sma(data, window=50, initial_capital=1_000.0)
-    mom_summary = summarize_strategy(mom, initial_capital=1_000.0)
-
-    return {
-        "date": last_idx.date().isoformat(),
-        "ticker": ticker,
-        "last_open": last_open,
-        "last_close": last_close,
-        "last_return": last_return,
-        "vol20_annualized": vol20,
-        # Buy & Hold
-        "bh_total_return": float(bh_summary["total_return"]),
-        "bh_sharpe": float(bh_summary["sharpe_ratio"]),
-        "bh_max_drawdown": float(bh_summary["max_drawdown"]),
-        # Momentum
-        "mom_total_return": float(mom_summary["total_return"]),
-        "mom_sharpe": float(mom_summary["sharpe_ratio"]),
-        "mom_max_drawdown": float(mom_summary["max_drawdown"]),
-    }
-
-
-def main() -> None:
-    base_dir = Path(__file__).resolve().parent.parent
-    reports_dir = base_dir / "reports"
-    reports_dir.mkdir(exist_ok=True)
-
-    rows = []
-    for t in ASSET_TICKERS:
+    for t in tickers:
         try:
-            rows.append(build_report_row(t))
+            # Fetch only the last trading day
+            df = yf.download(t, period="1d", progress=False)
+            
+            if df.empty:
+                print(f"No data found for {t}")
+                continue
+
+            # Handle MultiIndex columns if present (common in new yfinance versions)
+            # We want to access the scalar values of the first (and only) row
+            if isinstance(df.columns, pd.MultiIndex):
+                # Flatten or access directly
+                row = df.iloc[-1]
+                # Assuming level 0 is Price Type, level 1 is Ticker
+                # We try to extract values regardless of structure
+                try:
+                    open_p = float(row['Open'].iloc[0]) if isinstance(row['Open'], pd.Series) else float(row['Open'])
+                    high_p = float(row['High'].iloc[0]) if isinstance(row['High'], pd.Series) else float(row['High'])
+                    low_p = float(row['Low'].iloc[0]) if isinstance(row['Low'], pd.Series) else float(row['Low'])
+                    close_p = float(row['Close'].iloc[0]) if isinstance(row['Close'], pd.Series) else float(row['Close'])
+                    volume = float(row['Volume'].iloc[0]) if isinstance(row['Volume'], pd.Series) else float(row['Volume'])
+                except:
+                    # Fallback for simple index
+                    open_p = float(row['Open'])
+                    high_p = float(row['High'])
+                    low_p = float(row['Low'])
+                    close_p = float(row['Close'])
+                    volume = float(row['Volume'])
+            else:
+                # Standard DataFrame
+                row = df.iloc[-1]
+                open_p = float(row['Open'])
+                high_p = float(row['High'])
+                low_p = float(row['Low'])
+                close_p = float(row['Close'])
+                volume = float(row['Volume'])
+
+            # Simple Intraday Metrics
+            # Volatility: (High - Low) / Open (Daily Range %)
+            volatility = (high_p - low_p) / open_p if open_p > 0 else 0.0
+            
+            # Max Drawdown: (Low - High) / High (Worst drop from daily peak)
+            max_drawdown = (low_p - high_p) / high_p if high_p > 0 else 0.0
+
+            # Prepare data dict
+            report_data = {
+                'symbol': t,
+                'period': 'Daily (1d)',
+                'open': open_p,
+                'close': close_p,
+                'high': high_p,
+                'low': low_p,
+                'volatility': volatility,
+                'max_drawdown': max_drawdown,
+                'volume': volume
+            }
+
+            # Save to DB
+            log_market_report(report_data)
+            print(f"Report generated for {t}: Open={open_p}, Close={close_p}")
+
         except Exception as e:
-            # Capture errors to avoid crashing the whole cron job
-            print(f"Error processing {t}: {e}")
-            rows.append({"date": date.today().isoformat(), "ticker": t, "error": str(e)})
-
-    df_report = pd.DataFrame(rows)
-
-    today_str = date.today().isoformat()
-    outfile = reports_dir / f"daily_report_{today_str}.csv"
-    df_report.to_csv(outfile, index=False)
-
-    print(f"Daily report saved to {outfile}")
-    print(df_report)
-
+            print(f"Error generating report for {t}: {e}")
 
 if __name__ == "__main__":
-    main()
+    generate_daily_report()

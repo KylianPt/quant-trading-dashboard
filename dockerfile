@@ -1,5 +1,4 @@
-# Utilisation d'une version STABLE (bookworm) au lieu de la version par défaut qui peut être instable
-FROM python:3.9-slim-bookworm
+FROM python:3.11-slim-bookworm
 
 WORKDIR /app
 
@@ -29,7 +28,7 @@ COPY start.sh /start.sh
 RUN chmod +x /start.sh
 
 # 6. Ouvrir le port
-EXPOSE 8501
+EXPOSE 8080
 
 # 7. Lancement
 CMD ["/start.sh"]

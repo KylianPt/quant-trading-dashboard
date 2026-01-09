@@ -25,7 +25,7 @@ def render_reports_view():
 
     with c_btn2:
         # BOUTON 2 : RESET TOTAL & MOCK
-        if st.button("Reset & Mock DB", type="secondary", help="Delete all and generate 10 days history"):
+        if st.button("Reset & Mock DB", type="secondary", help="Delete all and generate 1 day history"):
             with st.spinner("Regenerating clean history..."):
                 count, msg = reset_and_fill_mock_data()
                 st.success(msg)
